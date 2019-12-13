@@ -379,11 +379,12 @@ let
       inherit pkgs haskellPackages;
     };
 
+    z3em = pkgs.callPackage ./nix/z3em.nix { inherit sources; };
+
     dev = rec {
       packages = localLib.getPackages {
         inherit (self) haskellPackages; filter = name: builtins.elem name [ "cabal-install" "stylish-haskell" "purty" ];
       } // { hie-bios = hie-bios; };
-
       scripts = {
         inherit (localLib) regeneratePackages;
 
@@ -473,7 +474,7 @@ let
         '';
       };
 
-      all-hies = pkgs.callPackage sources.all-hies {};
+      all-hies = pkgs.callPackage all-hies {};
       hie-bios = all-hies.bios.selection { selector = p: { inherit (p) ghc864; }; };
 
       withDevTools = env: env.overrideAttrs (attrs:
