@@ -307,7 +307,7 @@ validationData tx = do
     txins <- traverse mkIn $ Set.toList $ txInputs tx
     let ptx = PendingTx
             { pendingTxInputs = txins
-            , pendingTxOutputs = mkOut <$> txOutputs tx
+            , pendingTxOutputs = txOutputs tx
             , pendingTxForge = txForge tx
             , pendingTxFee = txFee tx
             , pendingTxIn = () -- this is changed accordingly in `checkMatch` during validation
@@ -317,15 +317,6 @@ validationData tx = do
             , pendingTxId = txId tx
             }
     pure ptx
-
--- | Create the data about a transaction output which will be passed to a validator script.
-mkOut :: TxOut -> Validation.PendingTxOut
-mkOut t = Validation.PendingTxOut (txOutValue t) tp where
-    tp = case txOutType t of
-        PayToScript dh ->
-            let vh  = Scripts.ValidatorHash (unsafeGetAddress $ txOutAddress t)
-            in Validation.ScriptTxOut vh dh
-        PayToPubKey pk -> Validation.PubKeyTxOut pk
 
 pendingTxInScript
     :: ValidationMonad m
@@ -347,7 +338,7 @@ txInFromRef outRef witness = Validation.PendingTxIn ref witness <$> vl where
     ref =
         let tid = txOutRefId outRef
             idx  = txOutRefIdx outRef
-        in Validation.PendingTxOutRef tid idx
+        in Validation.TxOutRef tid idx
 
 pendingTxInPubkey
     :: ValidationMonad m

@@ -33,6 +33,9 @@ instance Semigroup a => Monoid (Maybe a) where
     {-# INLINABLE mempty #-}
     mempty = Nothing
 
+instance Monoid () where
+    mempty = ()
+
 class Monoid a => Group a where
     inv :: a -> a
 

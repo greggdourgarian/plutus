@@ -51,6 +51,7 @@ library
         Wallet.Typed.StateMachine
         Wallet.Generators
         Wallet.Graph
+        Language.PlutusTx.TxConstraints
         Language.PlutusTx.StateMachine
     reexported-modules:
         Data.Aeson.Extras,

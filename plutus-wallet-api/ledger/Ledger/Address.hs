@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE DerivingVia    #-}
@@ -23,6 +24,9 @@ import           Data.Text.Prettyprint.Doc
 import           GHC.Generics              (Generic)
 import           IOTS                      (IotsType)
 
+import qualified Language.PlutusTx as PlutusTx
+import qualified Language.PlutusTx.Eq as PlutusTx
+
 import           LedgerBytes               (LedgerBytes(..))
 import           Ledger.Crypto
 import           Ledger.Orphans            ()
@@ -32,7 +36,7 @@ import           Ledger.Scripts
 newtype Address = Address { getAddress :: BSL.ByteString }
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON, ToJSONKey, FromJSONKey, IotsType)
-    deriving newtype (Serialise)
+    deriving newtype (Serialise, PlutusTx.Eq)
     deriving (IsString) via LedgerBytes
     deriving Pretty via LedgerBytes
 
@@ -61,3 +65,6 @@ scriptHashAddress vh = Address hsh where
 -- what is in addresses.
 unsafeGetAddress :: Address -> BSL.ByteString
 unsafeGetAddress (Address h) = h
+
+PlutusTx.makeIsData ''Address
+PlutusTx.makeLift ''Address

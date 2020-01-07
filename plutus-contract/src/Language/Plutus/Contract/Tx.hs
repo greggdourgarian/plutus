@@ -21,6 +21,7 @@ module Language.Plutus.Contract.Tx(
     , mustBeSignedBy
     , mustSpendInput
     , mustProduceOutput
+    , mustIncludeDataValue
     -- * Inspecting 'UnbalancedTx' values
     , valueMoved
     , requiredSignatures
@@ -49,6 +50,8 @@ import           GHC.Generics              (Generic)
 import           Language.PlutusTx.Lattice
 
 import           IOTS                      (IotsType)
+import           Language.PlutusTx.TxConstraints (TxConstraints)
+import qualified Language.PlutusTx.TxConstraints as Constraints
 import           Ledger                    (Address, DataValue, PubKey, RedeemerValue, TxOutRef, TxOutTx, Validator)
 import qualified Ledger                    as L
 import           Ledger.AddressMap         (AddressMap)
@@ -64,18 +67,9 @@ import qualified Wallet.API                as WAPI
 --   a contract endpoint. See note [Unbalanced transactions].
 data UnbalancedTx = UnbalancedTx
         { _inputs             :: Set L.TxIn
-        , _outputs            :: [L.TxOut]
-        , _forge              :: V.Value
-        , _requiredSignatures :: [PubKey]
-        , _dataValues         :: [DataValue]
-        , _validityRange      :: SlotRange
-        , _valueMoved         :: Value
-        -- ^ The minimum size of the transaction's left and right side. The
-        --   purpose of this field is to enable proof of ownership for tokens
-        --   (a transaction proves ownership of a token if the value consumed
-        --   and spent by it includes the token. The value in the '_valueMoved'
-        --   field will be paid from the wallet's own funds back to an address
-        --   owned by the wallet)
+        -- ^ Inputs to be spent by the 'UnbalancedTx'
+        , _constraints        :: TxConstraints
+        -- ^ Constraints placed on the transaction
         }
         deriving stock (Eq, Show, Generic)
         deriving anyclass (Aeson.FromJSON, Aeson.ToJSON, IotsType)
@@ -83,37 +77,25 @@ data UnbalancedTx = UnbalancedTx
 instance Semigroup UnbalancedTx where
     tx1 <> tx2 = UnbalancedTx {
         _inputs = _inputs tx1 <> _inputs tx2,
-        _outputs = _outputs tx1 <> _outputs tx2,
-        _forge = _forge tx1 <> _forge tx2,
-        _requiredSignatures = _requiredSignatures tx1 <> _requiredSignatures tx2,
-        _dataValues = _dataValues tx1 <> _dataValues tx2,
-        _validityRange = _validityRange tx1 /\ _validityRange tx2,
-        _valueMoved = _valueMoved tx1 <> _valueMoved tx2
+        _constraints = _constraints tx1 <> _constraints tx2
         }
 
 instance Monoid UnbalancedTx where
     mempty = UnbalancedTx mempty mempty mempty mempty mempty top mempty
 
 instance Pretty UnbalancedTx where
-    pretty UnbalancedTx{_inputs, _outputs, _forge, _requiredSignatures, _dataValues, _validityRange, _valueMoved} =
-        let renderOutput Tx.TxOut{Tx.txOutType, Tx.txOutValue} =
-                hang 2 $ vsep ["-" <+> pretty txOutValue <+> "locked by", pretty txOutType]
-            renderInput Tx.TxIn{Tx.txInRef,Tx.txInType} =
-                let rest =
-                        case txInType of
-                            Tx.ConsumeScriptAddress _ redeemer _ ->
-                                [pretty redeemer]
-                            Tx.ConsumePublicKeyAddress pk ->
-                                [pretty pk]
-                in hang 2 $ vsep $ "-" <+> pretty txInRef : rest
+    pretty UnbalancedTx{_inputs, _constraints} =
+        let renderInput Tx.TxIn{Tx.txInRef,Tx.txInType} =
+                    let rest =
+                            case txInType of
+                                Tx.ConsumeScriptAddress _ redeemer _ ->
+                                    [pretty redeemer]
+                                Tx.ConsumePublicKeyAddress pk ->
+                                    [pretty pk]
+                    in hang 2 $ vsep $ "-" <+> pretty txInRef : rest
             lines' =
                 [ hang 2 (vsep ("inputs:" : fmap renderInput (Set.toList _inputs)))
-                , hang 2 (vsep ("outputs:" : fmap renderOutput _outputs))
-                , "forge:" <+> pretty _forge
-                , hang 2 (vsep ("required signatures:": fmap pretty _requiredSignatures))
-                , hang 2 (vsep ("data values:" : fmap pretty _dataValues))
-                , "validity range:" <+> viaShow _validityRange
-                , "value moved:" <+> pretty _valueMoved
+                , hang 2 (vsep ["constraints:", pretty _constraints])
                 ]
         in braces $ nest 2 $ vsep lines'
 
@@ -128,13 +110,14 @@ validityRange = _validityRange
 
 -- | Does the transaction modify the UTXO set?
 modifiesUtxoSet :: UnbalancedTx -> Bool
-modifiesUtxoSet UnbalancedTx{_inputs, _outputs} =
-    not (null _inputs && null _outputs)
+modifiesUtxoSet UnbalancedTx{_inputs, _constraints} =
+    not (null _inputs && Constraints.modifiesUtxoSet _constraints)
 
--- | Is there a valid transaction that satisfies the constraint?
+-- | Is there a valid transaction that satisfies the constraint? (assuming
+--   none of the 'UnbalancedTx's inputs have been spent)
 hasValidTx :: UnbalancedTx -> Bool
-hasValidTx UnbalancedTx{_validityRange} =
-    not (I.isEmpty _validityRange)
+hasValidTx UnbalancedTx{_constraints} =
+    Constraints.hasValidTx _constraints
 
 -- | @mustBeValidIn r@ requires the transaction's slot range to be contained
 --   in @r@.
@@ -152,6 +135,10 @@ mustSpendInput i = mempty { _inputs = Set.singleton i }
 -- | Require the transaction to produce the ouptut
 mustProduceOutput :: L.TxOut -> UnbalancedTx
 mustProduceOutput o = mempty { _outputs = [o] }
+
+-- | Require the transaction to include a data value
+mustIncludeDataValue :: DataValue -> UnbalancedTx
+mustIncludeDataValue dv = mempty { _dataValues = [dv] }
 
 -- TODO: this is a bit of a hack, I'm not sure quite what the best way to avoid this is
 -- (used in the typed contract stuff only)
@@ -263,7 +250,5 @@ interval. There are two valid options: Hull and intersection. ('always' is the
 unit for the intersection but then there is the issue that we don't have a
 canonical representation of the empty interval (that's why 'intersection'
 returns a 'Maybe Interval'.))
-
-TODO: Make 'Interval' a lattice
 
 -}

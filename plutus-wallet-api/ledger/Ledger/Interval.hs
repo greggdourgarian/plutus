@@ -157,6 +157,10 @@ instance Ord a => BoundedMeetSemiLattice (Interval a) where
     {-# INLINABLE top #-}
     top = always
 
+instance Eq a => Eq (Interval a) where
+    {-# INLINABLE (==) #-}
+    l == r = ivFrom l == ivFrom r && ivTo l == ivTo r
+
 {-# INLINABLE interval #-}
 -- | @interval a b@ includes all values that are greater than or equal
 --   to @a@ and smaller than @b@. Therefore it includes @a@ but not it

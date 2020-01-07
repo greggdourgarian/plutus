@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE DerivingVia       #-}
@@ -74,6 +75,9 @@ import           GHC.Generics              (Generic)
 import           IOTS                      (IotsType)
 
 import           Language.PlutusTx.Lattice
+import qualified Language.PlutusTx as PlutusTx
+import qualified Language.PlutusTx.Eq as PlutusTx
+import qualified Language.PlutusTx.Bool as PlutusTx
 
 import           Ledger.Address
 import           Ledger.Crypto
@@ -305,6 +309,11 @@ data TxOutType =
     deriving stock (Show, Eq, Ord, Generic)
     deriving anyclass (Serialise, ToJSON, FromJSON, ToJSONKey, IotsType)
 
+instance PlutusTx.Eq TxOutType where
+    PayToScript l == PayToScript r = l PlutusTx.== r
+    PayToPubKey l == PayToPubKey r = l PlutusTx.== r
+    _ == _ = False
+
 instance Pretty TxOutType where
     pretty = \case
         PayToScript ds -> "PayToScript:" <+> pretty ds
@@ -318,6 +327,12 @@ data TxOut = TxOut {
     }
     deriving stock (Show, Eq, Generic)
     deriving anyclass (Serialise, ToJSON, FromJSON, IotsType)
+
+instance PlutusTx.Eq TxOut where
+    l == r =
+        txOutAddress l PlutusTx.== txOutAddress r
+        PlutusTx.&& txOutValue l PlutusTx.== txOutValue r
+        PlutusTx.&& txOutType l PlutusTx.== txOutType r
 
 -- | The data script attached to a 'TxOutOf', if there is one.
 txOutData :: TxOut -> Maybe DataValueHash
@@ -403,3 +418,12 @@ addSignature :: PrivateKey -> Tx -> Tx
 addSignature privK tx = tx & signatures . at pubK ?~ sig where
     sig = signTx (txId tx) privK
     pubK = toPublicKey privK
+
+PlutusTx.makeIsData ''TxOut
+PlutusTx.makeLift ''TxOut
+
+PlutusTx.makeIsDataIndexed ''TxOutType [('PayToScript, 0), ('PayToPubKey , 1)]
+PlutusTx.makeLift ''TxOutType
+
+PlutusTx.makeIsData ''TxOutRef
+PlutusTx.makeLift ''TxOutRef

@@ -10,7 +10,7 @@
 module Language.Plutus.Contract.StateMachine(
     -- $statemachine
     StateMachineClient(..)
-    , ValueAllocation(..)
+    , TxConstraints
     , SMContractError(..)
     , AsSMContractError(..)
     , SM.StateMachine(..)
@@ -35,9 +35,12 @@ import           Language.Plutus.Contract
 import qualified Language.Plutus.Contract.Tx       as Tx
 import qualified Language.Plutus.Contract.Typed.Tx as Tx
 import qualified Language.PlutusTx                 as PlutusTx
+import           Language.PlutusTx.Lattice
+import           Language.PlutusTx.TxConstraints   (TxConstraints)
 import           Language.PlutusTx.StateMachine    (StateMachine (..), StateMachineInstance (..))
 import qualified Language.PlutusTx.StateMachine    as SM
-import           Ledger                            (Value)
+import           Ledger                            (DataValue, TxOut, Value, PubKey)
+import           Ledger.Slot                       (SlotRange)
 import           Ledger.Typed.Tx                   (TypedScriptTxOut (..))
 import qualified Ledger.Typed.Tx                   as Typed
 import qualified Ledger.Value                      as Value
@@ -66,34 +69,11 @@ data SMContractError s i =
 
 makeClassyPrisms ''SMContractError
 
--- | Allocation of funds to outputs of the state machine transition transaction.
-data ValueAllocation =
-    ValueAllocation
-        { vaOwnAddress    :: Value
-        -- ^ How much should stay locked in the contract
-        , vaOtherPayments :: UnbalancedTx
-        -- ^ Any other payments
-        }
-
-instance Semigroup ValueAllocation where
-    l <> r =
-        ValueAllocation
-            { vaOwnAddress = vaOwnAddress l <> vaOwnAddress r
-            , vaOtherPayments = vaOtherPayments l <> vaOtherPayments r
-            }
-
-instance Monoid ValueAllocation where
-    mappend = (<>)
-    mempty  = ValueAllocation mempty mempty
-
 -- | Client-side definition of a state machine.
 data StateMachineClient s i = StateMachineClient
     { scInstance :: SM.StateMachineInstance s i
     -- ^ The instance of the state machine, defining the machine's transitions,
     --   its final states and its check function.
-    , scPayments :: s -> i -> Value -> Maybe ValueAllocation
-    -- ^ A function that determines the 'ValueAllocation' of each transition,
-    --   given the value currently locked by the contract.
     , scChooser  :: [SM.OnChainState s i] -> Either (SMContractError s i) (SM.OnChainState s i)
     -- ^ A function that chooses the relevant on-chain state, given a list of
     --   all potential on-chain states found at the contract address.
@@ -114,12 +94,10 @@ defaultChooser xs  =
 mkStateMachineClient ::
     forall state input
     . SM.StateMachineInstance state input
-    -> (state -> input -> Value -> Maybe ValueAllocation)
     -> StateMachineClient state input
-mkStateMachineClient inst payments =
+mkStateMachineClient inst =
     StateMachineClient
         { scInstance = inst
-        , scPayments = payments
         , scChooser  = defaultChooser
         }
 
@@ -149,10 +127,10 @@ runStep smc input = do
     -- the transaction returned by 'mkStep' includes an output with the payments
     -- to the script address, so we only need to deal with the 'vaOtherPayments'
     -- field of the value allocation here.
-    (typedTx, newState, ValueAllocation{vaOtherPayments}) <- mkStep smc input
+    (typedTx, newState, TxConstraints{vaOtherPayments, vaDataValues}) <- mkStep smc input
     let tx = case typedTx of
-            (Typed.TypedTxSomeOuts tx') -> Tx.fromLedgerTx (Typed.toUntypedTx tx')
-    submitTxConfirmed (tx <> vaOtherPayments)
+            (Typed.TypedTxSomeOuts tx') -> Tx.fromLedgerTx (Typed.toUntypedTx tx') -- FIXME: fromLedgerTx (use ledger Tx directly?)
+    submitTxConfirmed (tx <> foldMap mustProduceOutput vaOtherPayments <> foldMap mustIncludeDataValue vaDataValues)
     pure newState
 
 -- | Initialise a state machine
@@ -185,7 +163,7 @@ mkStep ::
     )
     => StateMachineClient state input
     -> input
-    -> Contract schema e (Typed.TypedTxSomeOuts '[SM.StateMachine state input], state, ValueAllocation)
+    -> Contract schema e (Typed.TypedTxSomeOuts '[SM.StateMachine state input], state, TxConstraints)
 mkStep client@StateMachineClient{scInstance, scPayments} input = do
     let StateMachineInstance{stateMachine=StateMachine{smTransition, smFinal}, validatorInstance} = scInstance
     (TypedScriptTxOut{tyTxOutData=currentState}, txOutRef) <- getOnChainState client

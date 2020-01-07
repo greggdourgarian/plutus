@@ -86,21 +86,20 @@ mkStep
     -> m (Typed.TypedTxSomeIns '[SM.StateMachine s i], s)
     -- ^ The advancing transaction, which consumes all the outputs at the script address, and the new state after applying the input
 mkStep (SM.StateMachineInstance (SM.StateMachine step _ _) si) currentState input valueAllocator = do
-    newState <- case step currentState input of
-        Just s  -> pure s
-        Nothing -> WAPI.throwOtherError "Invalid transition"
-    let redeemer :: Scripts.RedeemerType (SM.StateMachine s i)
-        redeemer = input
-        dataValue :: Scripts.DataType (SM.StateMachine s i)
-        dataValue = newState
-
     -- TODO: This needs to check that all the inputs have exactly the state we specify as the argument here,
     -- otherwise you can poison the contract by adding a state machine output that's not in the same state.
     -- We'd try and advance both to the new state in one transaction, and validation of the second one
     -- would fail.
-    typedIns <- WAPITyped.spendScriptOutputs si redeemer
-    let totalVal = foldMap Typed.txInValue typedIns
-        output = Typed.makeTypedScriptTxOut si dataValue (valueAllocator totalVal)
+    typedIns <- WAPITyped.spendScriptOutputs si input
+
+    -- The current balance of the contract (total value locked by all outputs)
+    let balance = foldMap Typed.txInValue typedIns
+
+    (alloc, newState) <- case step currentState input balance of -- FIXME: What to do with alloc?
+        Just s  -> pure s
+        Nothing -> WAPI.throwOtherError "Invalid transition"
+
+    let output = Typed.makeTypedScriptTxOut si newState (valueAllocator balance)
         txWithOuts = Typed.addTypedTxOut output Typed.baseTx
         fullTx :: Typed.TypedTxSomeIns '[SM.StateMachine s i]
         fullTx = Typed.addManyTypedTxIns typedIns txWithOuts
@@ -123,18 +122,21 @@ mkHalt
     -> m (Typed.TypedTxSomeIns '[], s)
     -- ^ The advancing transaction, which consumes all the outputs at the script address.
 mkHalt (SM.StateMachineInstance (SM.StateMachine step _ final) si) currentState input = do
-    newState <- case step currentState input of
-        Just s  -> pure s
-        Nothing -> WAPI.throwOtherError "Invalid transition"
-    unless (final newState) $ WAPI.throwOtherError $ "Cannot halt when transitioning to a non-final state: " <> (T.pack $ show newState)
-    let redeemer :: Scripts.RedeemerType (SM.StateMachine s i)
-        redeemer = input
-
+    
     -- TODO: This needs to check that all the inputs have exactly the state we specify as the argument here,
     -- otherwise you can poison the contract by adding a state machine output that's not in the same state.
     -- We'd try and advance both to the new state in one transaction, and validation of the second one
     -- would fail.
-    typedIns <- WAPITyped.spendScriptOutputs si redeemer
+    typedIns <- WAPITyped.spendScriptOutputs si input
+    
+    -- The current balance of the contract (total value locked by all outputs)
+    let balance = foldMap Typed.txInValue typedIns
+
+    (alloc, newState) <- case step currentState input balance of -- FIXME: What to do with alloc?
+        Just s  -> pure s
+        Nothing -> WAPI.throwOtherError "Invalid transition"
+    unless (final newState) $ WAPI.throwOtherError $ "Cannot halt when transitioning to a non-final state: " <> (T.pack $ show newState)
+
     let fullTx :: Typed.TypedTxSomeIns '[]
         fullTx = Typed.addManyTypedTxIns typedIns Typed.baseTx
 
