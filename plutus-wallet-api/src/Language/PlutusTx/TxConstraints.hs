@@ -11,6 +11,16 @@ module Language.PlutusTx.TxConstraints(
     , PendingTxConstraints
     , LedgerTxConstraints
     -- * Defining constraints
+    , payToScript
+    , payToPubKey
+    , forgeValue
+    , moveValue
+    , mustBeValidIn
+    , mustBeSignedBy
+    , mustSpendInput
+    , mustProduceOutput
+    , mustPayToOwnAddress
+    , mustIncludeDataValue
     -- * Queries
     , valueMoved
     , requiredSignatures
@@ -18,10 +28,14 @@ module Language.PlutusTx.TxConstraints(
     , checkPendingTx
     , modifiesUtxoSet
     , hasValidTx
+    -- * Ledger transactions
     , toLedgerTx
+    , fromLedgerTx
+    , toLedgerConstraints
     ) where
 
 import qualified Data.Aeson                as Aeson
+import qualified Data.Map                  as Map
 import           Data.Set                  (Set)
 import qualified Data.Set                  as Set
 import           Data.Text.Prettyprint.Doc hiding ((<>))
@@ -31,13 +45,13 @@ import           IOTS                      (IotsType)
 import qualified Language.PlutusTx         as PlutusTx
 import           Language.PlutusTx.Prelude
 
-import           Ledger                    (Address, PubKey, SlotRange, TxOut, Value, contains)
-import           Ledger.Scripts            (DataValue (..))
+import           Ledger                    (Address, PubKey, SlotRange, TxOut, Value, contains, isEmpty)
+import           Ledger.Scripts            (DataValue (..), dataValueHash)
+import           Ledger.Tx                 (Tx(..))
 import qualified Ledger.Tx                 as LTx
 import           Ledger.Typed.Scripts
-import           Ledger.Value              (leq)
-import           Ledger.Validation         (PendingTx, PendingTx'(..), TxOut (..), TxOutType (..), findData,
-                                            getContinuingOutputs)
+import           Ledger.Value              (leq, isZero)
+import           Ledger.Validation         (PendingTx, PendingTx'(..), TxOut (..))
 import qualified Ledger.Validation         as V
 
 import qualified Prelude                   as Haskell
@@ -220,6 +234,7 @@ moveValue :: (Monoid i, Monoid o) =>Value -> TxConstraints i o
 moveValue vl = mempty { tcValueMoved = vl }
 
 {-# INLINABLE checkPendingTx #-}
+-- | Does the 'PendingTx' satisfy the constraints?
 checkPendingTx :: PendingTxConstraints -> PendingTx -> Bool
 checkPendingTx TxConstraints{tcOutputs, tcDataValues, tcForge, tcInterval, tcRequiredSignatures, tcValueMoved} ptx = 
     let outputsOK = 
@@ -249,21 +264,56 @@ checkPendingTx TxConstraints{tcOutputs, tcDataValues, tcForge, tcInterval, tcReq
 -- | Is there a valid transaction that satisfies the constraints? (ignoring
 --   the inputs)
 hasValidTx :: TxConstraints i o -> Bool
-hasValidTx = undefined
+hasValidTx TxConstraints{tcInterval} = not (isEmpty tcInterval)
 
 -- | A ledger transaction that satisfies the constraints (unbalanced and 
 --   unsigned)
-toLedgerTx :: LedgerTxConstraints -> LTx.Tx
-toLedgerTx = undefined
+toLedgerTx :: LedgerTxConstraints -> Tx
+toLedgerTx TxConstraints{tcInputs, tcOutputs, tcForge, tcInterval, tcDataValues} =
+    Tx
+        { txInputs = tcInputs
+        , txOutputs = tcOutputs
+        , txForge = tcForge
+        , txFee = mempty
+        , txValidRange = tcInterval
+        , txSignatures = Map.empty
+        , txData = Map.fromList $ fmap (\ds -> (dataValueHash ds, ds)) tcDataValues
+        }
 
 -- | Constraints that are satisfied by the given ledger transaction
-fromLedgerTx :: LTx.Tx -> LedgerTxConstraints
-fromLedgerTx = undefined
+fromLedgerTx :: Tx -> LedgerTxConstraints
+fromLedgerTx Tx{txInputs, txOutputs, txForge, txValidRange, txSignatures, txData} =
+    TxConstraints
+        { tcInputs = txInputs
+        , tcOutputs = txOutputs
+        , tcForge = txForge
+        , tcInterval = txValidRange
+        , tcRequiredSignatures = Set.toList (Map.keysSet txSignatures)
+        , tcDataValues = snd <$> Map.toList txData
+        , tcValueMoved = mempty
+        }
 
 -- | Can the constraints be satisfied by a transaction with no
 --   inputs and outputs?
 modifiesUtxoSet :: LedgerTxConstraints -> Bool
-modifiesUtxoSet = undefined -- FIXME
+modifiesUtxoSet TxConstraints{tcForge, tcOutputs, tcValueMoved} =
+    not (isZero tcForge)
+    || not (isZero (foldMap txOutValue tcOutputs))
+    || not (isZero tcValueMoved)
+
+-- | Then an on-chain 'PendingTxConstraints' value into an (off-chain) 
+--   'LedgerTxConstraints' value, using the validator and the data value
+--   for the output at the 'PendingTxConstraints'' "own address"
+toLedgerConstraints :: PendingTxConstraints -> Validator -> DataValue -> LedgerTxConstraints
+toLedgerConstraints txc val dv =
+    let ValueAllocation{vaOtherPayments, vaOwnAddress} = tcOutputs txc
+    in txc 
+        { tcInputs = Set.empty
+        , tcOutputs =
+            if isZero vaOwnAddress
+                then vaOtherPayments
+                else LTx.scriptTxOut vaOwnAddress val dv : vaOtherPayments
+        }
 
 PlutusTx.makeIsData ''TxConstraints
 PlutusTx.makeLift ''TxConstraints

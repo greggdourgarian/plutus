@@ -95,7 +95,7 @@ mkStep (SM.StateMachineInstance (SM.StateMachine step _ _) si) currentState inpu
     -- The current balance of the contract (total value locked by all outputs)
     let balance = foldMap Typed.txInValue typedIns
 
-    (alloc, newState) <- case step currentState input balance of -- FIXME: What to do with alloc?
+    (constraints, newState) <- case step currentState input balance of -- FIXME: What to do with constraints?
         Just s  -> pure s
         Nothing -> WAPI.throwOtherError "Invalid transition"
 
@@ -132,7 +132,7 @@ mkHalt (SM.StateMachineInstance (SM.StateMachine step _ final) si) currentState 
     -- The current balance of the contract (total value locked by all outputs)
     let balance = foldMap Typed.txInValue typedIns
 
-    (alloc, newState) <- case step currentState input balance of -- FIXME: What to do with alloc?
+    (constraints, newState) <- case step currentState input balance of -- FIXME: What to do with constraints?
         Just s  -> pure s
         Nothing -> WAPI.throwOtherError "Invalid transition"
     unless (final newState) $ WAPI.throwOtherError $ "Cannot halt when transitioning to a non-final state: " <> (T.pack $ show newState)
