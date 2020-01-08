@@ -65,6 +65,7 @@ library
         Ledger.Orphans,
         Ledger.Slot,
         Ledger.Scripts,
+        Ledger.Specificity,
         Ledger.Tx,
         Ledger.TxId,
         Ledger.Validation,
