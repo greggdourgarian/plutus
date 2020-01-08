@@ -44,6 +44,7 @@ import           Ledger                            (DataValue, TxOut, Value, Pub
 import           Ledger.Slot                       (SlotRange)
 import           Ledger.Typed.Tx                   (TypedScriptTxOut (..))
 import qualified Ledger.Typed.Tx                   as Typed
+import           Ledger.Typed.Constraints          (TypedTxConstraints, toTypedTxConstraints, addTypedTxIn)
 import qualified Ledger.Value                      as Value
 
 import qualified Wallet.Typed.StateMachine         as SM
@@ -123,14 +124,16 @@ runStep ::
     -- ^ The state machine
     -> input
     -- ^ The input to apply to the state machine
-    -> Contract schema e state
+    -> Contract schema e (Maybe state)
 runStep smc input = do
-    -- the transaction returned by 'mkStep' includes an output with the payments
-    -- to the script address, so we only need to deal with the 'vaOtherPayments'
-    -- field of the value allocation here.
-    (typedTx, newState, constraints) <- mkStep smc input
-    let tx = case typedTx of
-            (Typed.TypedTxSomeOuts tx') -> Constraints.fromLedgerTx (Typed.toUntypedTx tx') -- FIXME: fromLedgerTx (use ledger Tx directly?)
+    typedConstraints <- mkStep smc input
+    case typedConstraints of
+        Left c -> -- no continuing output (final state) 
+            submitTxConfirmed tx
+            pure Nothing
+        Right c ->
+            undefined
+    
     submitTxConfirmed (tx <> constraints)
     pure newState
 
@@ -155,6 +158,11 @@ runInitialise StateMachineClient{scInstance} initialState initialValue = do
     submitTxConfirmed tx
     pure initialState
 
+type StateMachineTypedTx state input =
+    Either 
+        (TypedTxConstraints '[SM.StateMachine state input] '[]) 
+        (TypedTxConstraints '[SM.StateMachine state input] '[SM.StateMachine state input])
+
 mkStep ::
     forall e state schema input.
     ( AsSMContractError e state input
@@ -164,25 +172,17 @@ mkStep ::
     )
     => StateMachineClient state input
     -> input
-    -> Contract schema e (Typed.TypedTxSomeOuts '[SM.StateMachine state input], state, LedgerTxConstraints)
+    -> Contract schema e (StateMachineTypedTx state input)
 mkStep client@StateMachineClient{scInstance} input = do
-    let StateMachineInstance{stateMachine=StateMachine{smTransition, smFinal}, validatorInstance} = scInstance
+    let StateMachineInstance{stateMachine=StateMachine{smTransition}, validatorInstance} = scInstance
     (TypedScriptTxOut{tyTxOutData=currentState}, txOutRef) <- getOnChainState client
     
     let typedTxIn = Typed.makeTypedScriptTxIn @(SM.StateMachine state input) validatorInstance input txOutRef
         tx = Typed.TypedTxSomeOuts (Typed.addTypedTxIn typedTxIn Typed.baseTx)
         balance = Typed.txInValue typedTxIn
-    (constraints, newState) <- case smTransition currentState input balance of
+    typedTxConstraints <- case smTransition currentState input balance >>= toTypedTxConstraints validatorInstance of
         Just s  -> pure s
         Nothing -> throwing _InvalidTransition (currentState, input)
 
-    finalTx <- if smFinal newState -- FIXME Do we need smFinal??
-               then do
-                    unless (Value.isZero (vaOwnAddress valueAllocation)) (throwing_ _NonZeroValueAllocatedInFinalState)
-                    pure tx
-               else do
-                    let output = Typed.makeTypedScriptTxOut validatorInstance newState (vaOwnAddress valueAllocation)
-                        fullTx = Typed.addSomeTypedTxOut output tx
-                    pure fullTx
-
-    pure (finalTx, newState, valueAllocation)
+    let txWithIns = bimap (addTypedTxIn typedTxIn) (addTypedTxIn typedTxIn) typedTxConstraints
+    pure txWithIns

@@ -29,6 +29,7 @@ module Ledger.Constraints(
     , checkPendingTx
     , modifiesUtxoSet
     , hasValidTx
+    , hasContinuingOutput
     -- * Ledger transactions (untyped interface)
     , LedgerTxConstraints
     , toLedgerTx
@@ -250,7 +251,7 @@ moveValue vl = mempty { tcValueMoved = vl }
 
 {-# INLINABLE checkPendingTx #-}
 -- | Does the 'PendingTx' satisfy the constraints?
-checkPendingTx :: IsData a => PendingTxConstraints a -> PendingTx -> Bool
+checkPendingTx :: (Eq a, IsData a) => PendingTxConstraints a -> PendingTx -> Bool
 checkPendingTx TxConstraints{tcOutputs, tcDataValues, tcForge, tcInterval, tcRequiredSignatures, tcValueMoved} ptx =
     let outputsOK =
             let ValueAllocation{vaOwnAddress, vaOtherPayments} = tcOutputs
@@ -261,9 +262,9 @@ checkPendingTx TxConstraints{tcOutputs, tcDataValues, tcForge, tcInterval, tcReq
                         Exactly PayToSelf{ptsValue, ptsData} ->
                             case V.getContinuingOutputs ptx of
                                 []  -> traceH "No continuing outputs" False
-                                [TxOut{txOutType=(PayToScript dsh), txOutValue}] | Just (DataValue d) <- V.findData dsh ptx ->
+                                [TxOut{txOutType=(PayToScript dsh), txOutValue}] | Just (DataValue d) <- V.findData dsh ptx, Just givenState <- PlutusTx.fromData d ->
                                     traceIfFalseH "Value different from expected" (txOutValue == ptsValue)
-                                    && traceIfFalseH "Data different from expected" (d == PlutusTx.toData ptsData)
+                                    && traceIfFalseH "State different from expected" (givenState == ptsData)
                                 _   -> traceH "Too many continuing outputs" False
             in
                 selfAllocOK
@@ -289,6 +290,13 @@ checkPendingTx TxConstraints{tcOutputs, tcDataValues, tcForge, tcInterval, tcReq
 --   the inputs and outputs)
 hasValidTx :: TxConstraints i o -> Bool
 hasValidTx TxConstraints{tcInterval} = not (isEmpty tcInterval)
+
+{-# INLINABLE hasContinuingOutput #-}
+hasContinuingOutput :: PendingTxConstraints a -> Bool
+hasContinuingOutput TxConstraints{tcOutputs=ValueAllocation{vaOwnAddress}} =
+    case vaOwnAddress of
+        Exactly _ -> True
+        _         -> False
 
 -- | A ledger transaction that satisfies the constraints (unbalanced and
 --   unsigned)
