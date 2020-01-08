@@ -36,8 +36,8 @@ import qualified Language.Plutus.Contract.Tx       as Tx
 import qualified Language.Plutus.Contract.Typed.Tx as Tx
 import qualified Language.PlutusTx                 as PlutusTx
 import           Language.PlutusTx.Lattice
-import           Language.PlutusTx.TxConstraints   (TxConstraints(..))
-import qualified Language.PlutusTx.TxConstraints   as Constraints
+import           Ledger.Constraints   (TxConstraints(..))
+import qualified Ledger.Constraints   as Constraints
 import           Language.PlutusTx.StateMachine    (StateMachine (..), StateMachineInstance (..))
 import qualified Language.PlutusTx.StateMachine    as SM
 import           Ledger                            (DataValue, TxOut, Value, PubKey)

@@ -25,7 +25,7 @@ import           Language.Plutus.Contract.Effects.AwaitTxConfirmed (HasTxConfirm
 import           Language.Plutus.Contract.Request as Req
 import           Language.Plutus.Contract.Schema  (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Tx      (LedgerTxConstraints)
-import           Language.PlutusTx.TxConstraints  (TxConstraints)
+import           Ledger.Constraints  (TxConstraints)
 
 import           IOTS                             (IotsType)
 import           Ledger.TxId                      (TxId)

@@ -28,8 +28,8 @@ import           GHC.Generics              (Generic)
 import           Language.PlutusTx.Lattice
 
 import           IOTS                      (IotsType)
-import           Language.PlutusTx.TxConstraints (PendingTxConstraints, LedgerTxConstraints)
-import qualified Language.PlutusTx.TxConstraints as Constraints
+import           Ledger.Constraints (PendingTxConstraints, LedgerTxConstraints)
+import qualified Ledger.Constraints as Constraints
 import           Ledger                    (Address, DataValue, PubKey, RedeemerValue, TxOutRef, TxOutTx, Validator)
 import qualified Ledger                    as L
 import           Ledger.AddressMap         (AddressMap)

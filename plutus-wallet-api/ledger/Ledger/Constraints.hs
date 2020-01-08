@@ -1,12 +1,12 @@
-{-# LANGUAGE TypeApplications   #-}
 {-# LANGUAGE DeriveAnyClass     #-}
 {-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE TypeApplications   #-}
 -- | Constraints for transactions
-module Language.PlutusTx.TxConstraints(
+module Ledger.Constraints(
     TxConstraints(..)
     , PendingTxConstraints
     , LedgerTxConstraints
@@ -45,14 +45,17 @@ import           IOTS                      (IotsType)
 import qualified Language.PlutusTx         as PlutusTx
 import           Language.PlutusTx.Prelude
 
-import           Ledger                    (Address, PubKey, SlotRange, TxOut, Value, contains, isEmpty)
+import           Ledger.Address            (Address)
+import           Ledger.Crypto             (PubKey)
+import           Ledger.Interval           (contains, isEmpty)
 import           Ledger.Scripts            (DataValue (..), dataValueHash)
-import           Ledger.Tx                 (Tx(..))
+import           Ledger.Slot               (SlotRange)
+import           Ledger.Tx                 (Tx (..))
 import qualified Ledger.Tx                 as LTx
 import           Ledger.Typed.Scripts
-import           Ledger.Value              (leq, isZero)
-import           Ledger.Validation         (PendingTx, PendingTx'(..), TxOut (..))
+import           Ledger.Validation         (PendingTx, PendingTx' (..), TxOut (..))
 import qualified Ledger.Validation         as V
+import           Ledger.Value              (Value, isZero, leq)
 
 import qualified Prelude                   as Haskell
 
@@ -61,13 +64,13 @@ type LedgerTxConstraints  = TxConstraints (Set LTx.TxIn) [TxOut]
 
 data ValueAllocation =
     ValueAllocation
-        { vaOwnAddress :: Value
+        { vaOwnAddress    :: Value
         , vaOtherPayments :: [TxOut]
         } deriving stock (Haskell.Eq, Generic)
           deriving anyclass (Aeson.FromJSON, Aeson.ToJSON, IotsType)
 
 instance Semigroup ValueAllocation where
-    l <> r = 
+    l <> r =
         ValueAllocation
             { vaOwnAddress = vaOwnAddress l <> vaOwnAddress r
             , vaOtherPayments = vaOtherPayments l <> vaOtherPayments r
@@ -86,8 +89,8 @@ instance Pretty ValueAllocation where
     pretty ValueAllocation{vaOwnAddress, vaOtherPayments} =
         let renderOutput LTx.TxOut{LTx.txOutType, LTx.txOutValue} =
                 hang 2 $ vsep ["-" <+> pretty txOutValue <+> "locked by", pretty txOutType]
-        in 
-        vsep 
+        in
+        vsep
             [ hang 2 (vsep ["paid to own address:",  pretty vaOwnAddress])
             , hang 2 (vsep ("other payments:" : fmap renderOutput vaOtherPayments))
             ]
@@ -156,7 +159,7 @@ instance (Eq o, Eq i) => Eq (TxConstraints i o) where
         && tcInterval l == tcInterval r
         && tcRequiredSignatures l == tcRequiredSignatures r
         && tcValueMoved l == tcValueMoved r
-        
+
 
 instance (Pretty i, Pretty o) => Pretty (TxConstraints i o) where
     pretty TxConstraints{tcOutputs, tcDataValues, tcForge, tcInterval, tcRequiredSignatures, tcValueMoved, tcInputs} =
@@ -236,22 +239,22 @@ moveValue vl = mempty { tcValueMoved = vl }
 {-# INLINABLE checkPendingTx #-}
 -- | Does the 'PendingTx' satisfy the constraints?
 checkPendingTx :: PendingTxConstraints -> PendingTx -> Bool
-checkPendingTx TxConstraints{tcOutputs, tcDataValues, tcForge, tcInterval, tcRequiredSignatures, tcValueMoved} ptx = 
-    let outputsOK = 
+checkPendingTx TxConstraints{tcOutputs, tcDataValues, tcForge, tcInterval, tcRequiredSignatures, tcValueMoved} ptx =
+    let outputsOK =
             let ValueAllocation{vaOwnAddress, vaOtherPayments} = tcOutputs
-            in 
+            in
                 foldMap V.txOutValue (V.getContinuingOutputs ptx) == vaOwnAddress
                 && all (`elem` pendingTxOutputs ptx) vaOtherPayments
-        dataValuesOK = 
+        dataValuesOK =
             all (`elem` fmap snd (pendingTxData ptx)) tcDataValues
-        forgeOK = 
+        forgeOK =
             tcForge == pendingTxForge ptx
         valueMovedOK = tcValueMoved `leq` V.valueSpent ptx
-        intervalOK = 
+        intervalOK =
             -- the pending transaction's validation interval is at least
             -- as specific (as small) as 'tcInterval'
             tcInterval `contains` pendingTxValidRange ptx
-        signaturesOK = 
+        signaturesOK =
             all (V.txSignedBy ptx) tcRequiredSignatures
     in traceIfFalseH "checkPendingTx failed - outputs not OK" outputsOK
         && traceIfFalseH "checkPendingTx failed - data values not OK" dataValuesOK
@@ -266,7 +269,7 @@ checkPendingTx TxConstraints{tcOutputs, tcDataValues, tcForge, tcInterval, tcReq
 hasValidTx :: TxConstraints i o -> Bool
 hasValidTx TxConstraints{tcInterval} = not (isEmpty tcInterval)
 
--- | A ledger transaction that satisfies the constraints (unbalanced and 
+-- | A ledger transaction that satisfies the constraints (unbalanced and
 --   unsigned)
 toLedgerTx :: LedgerTxConstraints -> Tx
 toLedgerTx TxConstraints{tcInputs, tcOutputs, tcForge, tcInterval, tcDataValues} =
@@ -301,13 +304,13 @@ modifiesUtxoSet TxConstraints{tcForge, tcOutputs, tcValueMoved} =
     || not (isZero (foldMap txOutValue tcOutputs))
     || not (isZero tcValueMoved)
 
--- | Then an on-chain 'PendingTxConstraints' value into an (off-chain) 
+-- | Then an on-chain 'PendingTxConstraints' value into an (off-chain)
 --   'LedgerTxConstraints' value, using the validator and the data value
 --   for the output at the 'PendingTxConstraints'' "own address"
 toLedgerConstraints :: PendingTxConstraints -> Validator -> DataValue -> LedgerTxConstraints
 toLedgerConstraints txc val dv =
     let ValueAllocation{vaOtherPayments, vaOwnAddress} = tcOutputs txc
-    in txc 
+    in txc
         { tcInputs = Set.empty
         , tcOutputs =
             if isZero vaOwnAddress

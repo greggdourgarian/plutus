@@ -18,7 +18,7 @@ module Language.PlutusTx.StateMachine(
     ) where
 
 import           Language.PlutusTx.Prelude hiding (check)
-import           Language.PlutusTx.TxConstraints
+import           Ledger.Constraints
 import qualified Language.PlutusTx as PlutusTx
 
 import           Ledger                    (Address, Value)

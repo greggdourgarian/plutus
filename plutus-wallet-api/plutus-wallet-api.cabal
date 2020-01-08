@@ -51,7 +51,6 @@ library
         Wallet.Typed.StateMachine
         Wallet.Generators
         Wallet.Graph
-        Language.PlutusTx.TxConstraints
         Language.PlutusTx.StateMachine
     reexported-modules:
         Data.Aeson.Extras,
@@ -61,6 +60,7 @@ library
         Ledger.Address,
         Ledger.AddressMap,
         Ledger.Blockchain,
+        Ledger.Constraints,
         Ledger.Crypto,
         Ledger.Orphans,
         Ledger.Slot,
@@ -72,6 +72,7 @@ library
         Ledger.Interval,
         Ledger.Value,
         Ledger.Tokens,
+        Ledger.Typed.Constraints,
         Ledger.Typed.Scripts,
         Ledger.Typed.Tx,
         LedgerBytes
@@ -111,6 +112,7 @@ library plutus-ledger
         Ledger.Address
         Ledger.AddressMap
         Ledger.Blockchain
+        Ledger.Constraints
         Ledger.Crypto
         Ledger.Orphans
         Ledger.Slot
@@ -122,6 +124,7 @@ library plutus-ledger
         Ledger.Interval
         Ledger.Value
         LedgerBytes
+        Ledger.Typed.Constraints
         Ledger.Typed.Scripts
         Ledger.Tokens
         Ledger.Typed.Tx

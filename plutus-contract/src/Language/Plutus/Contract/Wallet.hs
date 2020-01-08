@@ -26,7 +26,7 @@ import qualified Data.Set                    as Set
 import           Data.String                 (IsString (fromString))
 import           Data.Text.Prettyprint.Doc   (Pretty (..))
 import           Language.Plutus.Contract.Tx (LedgerTxConstraints)
-import qualified Language.PlutusTx.TxConstraints as C
+import qualified Ledger.Constraints as C
 import qualified Language.Plutus.Contract.Tx as T
 import qualified Language.PlutusTx.Numeric   as N
 import qualified Language.PlutusTx.Prelude   as P

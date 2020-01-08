@@ -9,7 +9,7 @@ module Language.Plutus.Contract.Typed.Tx where
 
 import qualified Language.Plutus.Contract.Tx as Contract
 import qualified Language.PlutusTx           as PlutusTx
-import qualified Language.PlutusTx.TxConstraints as Constraints
+import qualified Ledger.Constraints as Constraints
 
 import           Ledger                      (TxOutRef, TxOutTx)
 import qualified Ledger                      as L
