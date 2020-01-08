@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -6,7 +7,8 @@ module Ledger.Typed.Constraints where
 
 import           Data.Kind
 
-import           Ledger.Constraints     (LedgerTxConstraints, TxConstraints (..))
+import           Ledger.Constraints
+import           Ledger.Specificity     (Specificity(..))
 import           Ledger.Tx              (TxOut)
 import           Ledger.Typed.Scripts   (ScriptType(..), ScriptInstance)
 import           Ledger.Typed.Tx
@@ -35,15 +37,25 @@ newtype TypedTxConstraints (ins :: [Type]) (outs :: [Type]) =
 data TypedTxSomeOutsConstraints (ins :: [Type]) =
   forall outs. TypedTxSomeOutsConstraints (TypedTxConstraints ins outs)
 
+-- | Turn an on-chain 'PendingTxConstraints' value into an (off-chain)
+--   'TypedTxSomeOutsConstraints []' value.
 toTypedTxConstraints
   :: forall inn 
-  .  (IsData (RedeemerType inn), IsData (DataType inn))
+  .  (IsData (DataType inn))
   => ScriptInstance inn
-  -> RedeemerType inn
-  -> TypedScriptTxIn inn
-  -> LedgerTxConstraints
-  -> TypedTxSomeOutsConstraints '[inn]
-toTypedTxConstraints = undefined
+  -> PendingTxConstraints (DataType inn)
+  -> Maybe (TypedTxSomeOutsConstraints '[])
+toTypedTxConstraints inst txc  = 
+  let ValueAllocation{vaOtherPayments, vaOwnAddress} = tcOutputs txc
+      txIns = TypedOrPubKeyTxIns { topTypedTxIns = HNilF, topPubKeyTxIns = [] }
+      otherTxOuts = TypedOrUntypedTxOuts { totTypedTxOuts = HNilF, totOtherTxOuts = vaOtherPayments}
+  in case vaOwnAddress of
+    Unspecified ->
+      Just $ TypedTxSomeOutsConstraints $ TypedTxConstraints $ txc { tcInputs = txIns, tcOutputs = otherTxOuts }
+    Exactly PayToSelf{ptsData, ptsValue} ->
+      let out = makeTypedScriptTxOut inst ptsData ptsValue
+      in Just $ TypedTxSomeOutsConstraints $ TypedTxConstraints $ txc { tcInputs = txIns, tcOutputs = otherTxOuts { totTypedTxOuts = HConsF out HNilF }}
+    Overspecified -> Nothing
 
 -- mirror TypedTxSomeOuts
 

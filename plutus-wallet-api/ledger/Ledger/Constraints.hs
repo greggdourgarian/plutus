@@ -8,6 +8,8 @@
 -- | Constraints for transactions
 module Ledger.Constraints(
     TxConstraints(..)
+    , ValueAllocation(..)
+    , PayToSelf(..)
     , PendingTxConstraints
     -- * Defining constraints
     , payToScript
@@ -60,7 +62,10 @@ import           Ledger.Value              (Value, isZero, leq)
 
 import qualified Prelude                   as Haskell
 
+-- | Constraints on a transaction in on-chain code.
 type PendingTxConstraints a = TxConstraints () (ValueAllocation a)
+
+-- | Constraints on a transaction in off-chain code.
 type LedgerTxConstraints  = TxConstraints (Set LTx.TxIn) [TxOut]
 
 data PayToSelf a = PayToSelf { ptsValue :: Value, ptsData :: a }
@@ -323,8 +328,8 @@ modifiesUtxoSet TxConstraints{tcForge, tcOutputs, tcValueMoved} =
 -- | Turn an on-chain 'PendingTxConstraints' value into an (off-chain)
 --   'LedgerTxConstraints' value, using the validator and the data value
 --   for the output at the 'PendingTxConstraints'' "own address"
-toLedgerConstraints :: PlutusTx.IsData a => PendingTxConstraints a -> Address -> Maybe LedgerTxConstraints
-toLedgerConstraints txc addr =
+toLedgerConstraints :: PlutusTx.IsData a => Address -> PendingTxConstraints a -> Maybe LedgerTxConstraints
+toLedgerConstraints addr txc =
     let ValueAllocation{vaOtherPayments, vaOwnAddress} = tcOutputs txc
     in case vaOwnAddress of
         Unspecified ->
