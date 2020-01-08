@@ -9,6 +9,8 @@ module Language.Plutus.Contract.Typed.Tx where
 
 import qualified Language.Plutus.Contract.Tx as Contract
 import qualified Language.PlutusTx           as PlutusTx
+import qualified Language.PlutusTx.TxConstraints as Constraints
+
 import           Ledger                      (TxOutRef, TxOutTx)
 import qualified Ledger                      as L
 import           Ledger.AddressMap           (AddressMap)
@@ -27,14 +29,14 @@ collectFromScriptFilter ::
     -> AddressMap
     -> Scripts.ScriptInstance a
     -> Scripts.RedeemerType a
-    -> Contract.UnbalancedTx
+    -> Constraints.LedgerTxConstraints
 collectFromScriptFilter flt am si red =
     let typed = Typed.collectFromScriptFilter flt am si red
         untypedTx :: L.Tx
         -- Need to match to get the existential type out
         untypedTx = case typed of
             (Typed.TypedTxSomeIns tx) -> Typed.toUntypedTx tx
-    in Contract.fromLedgerTx untypedTx
+    in Constraints.fromLedgerTx untypedTx
 
 -- | A version of 'collectFromScript' that selects all outputs
 --   at the address
@@ -44,7 +46,7 @@ collectFromScript ::
     => AddressMap
     -> Scripts.ScriptInstance a
     -> Scripts.RedeemerType a
-    -> Contract.UnbalancedTx
+    -> Constraints.LedgerTxConstraints
 collectFromScript = collectFromScriptFilter (\_ _ -> True)
 
 -- | Given a 'ScriptInstance', lock a value with it using the 'DataValue'.
@@ -54,8 +56,8 @@ makeScriptPayment ::
     => Scripts.ScriptInstance a
     -> Value
     -> Scripts.DataType a
-    -> Contract.UnbalancedTx
+    -> Constraints.LedgerTxConstraints
 makeScriptPayment si vl ds =
     let out    = Typed.makeTypedScriptTxOut @a si ds vl
         tyTx   = Typed.addTypedTxOut @'[] @'[] @a out Typed.baseTx
-    in Contract.fromLedgerTx (Typed.toUntypedTx tyTx)
+    in Constraints.fromLedgerTx (Typed.toUntypedTx tyTx)

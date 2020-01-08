@@ -132,19 +132,9 @@ data Tx = Tx {
 
 instance Pretty Tx where
     pretty t@Tx{txInputs, txOutputs, txForge, txFee, txValidRange, txSignatures} =
-        let renderOutput TxOut{txOutType, txOutValue} =
-                hang 2 $ vsep ["-" <+> pretty txOutValue <+> "locked by", pretty txOutType]
-            renderInput TxIn{txInRef,txInType} =
-                let rest =
-                        case txInType of
-                            ConsumeScriptAddress _ redeemer _ ->
-                                [pretty redeemer]
-                            ConsumePublicKeyAddress pk ->
-                                [pretty pk]
-                in hang 2 $ vsep $ "-" <+> pretty txInRef : rest
-            lines' =
-                [ hang 2 (vsep ("inputs:" : fmap renderInput (Set.toList txInputs)))
-                , hang 2 (vsep ("outputs:" : fmap renderOutput txOutputs))
+        let lines' =
+                [ hang 2 (vsep ("inputs:" : fmap pretty (Set.toList txInputs)))
+                , hang 2 (vsep ("outputs:" : fmap pretty txOutputs))
                 , "forge:" <+> pretty txForge
                 , "fee:" <+> pretty txFee
                 , hang 2 (vsep ("signatures:": fmap (pretty . fst) (Map.toList txSignatures)))
@@ -271,6 +261,16 @@ data TxIn = TxIn {
     deriving stock (Show, Eq, Ord, Generic)
     deriving anyclass (Serialise, IotsType, ToJSON, FromJSON)
 
+instance Pretty TxIn where
+    pretty TxIn{txInRef,txInType} =
+                let rest =
+                        case txInType of
+                            ConsumeScriptAddress _ redeemer _ ->
+                                pretty redeemer
+                            ConsumePublicKeyAddress pk ->
+                                pretty pk
+                in hang 2 $ vsep ["-" <+> pretty txInRef, rest]
+
 -- | The 'TxOutRef' spent by a transaction input.
 inRef :: Lens TxIn TxIn TxOutRef TxOutRef
 inRef = lens txInRef s where
@@ -327,6 +327,10 @@ data TxOut = TxOut {
     }
     deriving stock (Show, Eq, Generic)
     deriving anyclass (Serialise, ToJSON, FromJSON, IotsType)
+
+instance Pretty TxOut where
+    pretty TxOut{txOutType, txOutValue} =
+                hang 2 $ vsep ["-" <+> pretty txOutValue <+> "locked by", pretty txOutType]
 
 instance PlutusTx.Eq TxOut where
     l == r =

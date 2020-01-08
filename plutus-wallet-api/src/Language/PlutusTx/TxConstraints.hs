@@ -7,7 +7,7 @@
 {-# LANGUAGE TemplateHaskell    #-}
 -- | Constraints for transactions
 module Language.PlutusTx.TxConstraints(
-    TxConstraints
+    TxConstraints(..)
     , PendingTxConstraints
     , LedgerTxConstraints
     -- * Defining constraints
